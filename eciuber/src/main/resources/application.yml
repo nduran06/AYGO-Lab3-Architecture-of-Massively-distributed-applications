@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: eciuber
+
+aws:
+  region: us-east-1
+  credentials:
+    access-key: ASIAZMQOUQZAZT3LTKTP
+    secret-key: vqpOhpqhix/A1a3s5oFpmtOsDlZZu2rg4d3DMAHR
+  dynamodb:
+    endpoint: https://dynamodb.${aws.region}.amazonaws.com
+    tables:
+      user: Users
+      ride: Rides
+    
+  

@@ -1,0 +1,274 @@
+# docker-compose.yml
+
+version: '3.8'
+
+services:
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_CLOUD_GATEWAY_ROUTES_0_URI=http://user-service:8081
+      - SPRING_CLOUD_GATEWAY_ROUTES_1_URI=http://ride-service:8082
+      - SPRING_CLOUD_GATEWAY_ROUTES_2_URI=http://payment-service:8083
+    depends_on:
+      - user-service
+      - ride-service
+      - payment-service
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  # User Service
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_DATA_DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - STORAGE_SERVICE_URL=http://storage-service:8085
+    depends_on:
+      - dynamodb-local
+      - kafka
+      - storage-service
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # Ride Service
+  ride-service:
+    build:
+      context: ./ride-service
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_DATA_DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - dynamodb-local
+      - kafka
+      - redis
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # Payment Service
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_DATA_DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - PAYMENT_GATEWAY_URL=http://mock-payment-gateway:8090
+    depends_on:
+      - dynamodb-local
+      - kafka
+      - mock-payment-gateway
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # Location Service
+  location-service:
+    build:
+      context: ./location-service
+      dockerfile: Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      - redis
+      - kafka
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 768M
+
+  # Storage Service
+  storage-service:
+    build:
+      context: ./storage-service
+      dockerfile: Dockerfile
+    ports:
+      - "8085:8085"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET}
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - EMAIL_SERVICE_URL=http://mock-email-service:8091
+      - SMS_SERVICE_URL=http://mock-sms-service:8092
+    depends_on:
+      - kafka
+      - mock-email-service
+      - mock-sms-service
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # Infrastructure Services
+
+  # DynamoDB Local
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    ports:
+      - "8000:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-optimizeDbBeforeStartup", "-dbPath", "./data"]
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # Redis
+  redis:
+    image: redis:6.2-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # Kafka and Zookeeper
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - ride-sharing-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # Mock External Services
+  mock-payment-gateway:
+    build:
+      context: ./mock-services/payment-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    networks:
+      - ride-sharing-network
+
+  mock-email-service:
+    build:
+      context: ./mock-services/email-service
+      dockerfile: Dockerfile
+    ports:
+      - "8091:8091"
+    networks:
+      - ride-sharing-network
+
+  mock-sms-service:
+    build:
+      context: ./mock-services/sms-service
+      dockerfile: Dockerfile
+    ports:
+      - "8092:8092"
+    networks:
+      - ride-sharing-network
+
+# Volumes
+volumes:
+  dynamodb-data:
+  redis-data:
+
+# Networks
+networks:
+  ride-sharing-network:
+    driver: bridge

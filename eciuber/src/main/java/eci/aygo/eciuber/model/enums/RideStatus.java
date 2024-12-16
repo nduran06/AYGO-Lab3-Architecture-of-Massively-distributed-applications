@@ -1,0 +1,9 @@
+package eci.aygo.eciuber.model.enums;
+
+public enum RideStatus {
+
+	REQUESTED, IN_PROGRESS, DRIVER_ASSIGNED, DRIVER_ARRIVED, CANCELLED_BY_RIDER, CANCELLED_BY_DRIVER, COMPLETED,
+	SYSTEM_CANCELLED
+	
+	
+}
